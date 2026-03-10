@@ -1,6 +1,7 @@
 """FastAPI capture service: accept notes and append directly to GitHub."""
 
 import re
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -11,25 +12,6 @@ from github import Github
 from config import get_settings
 
 settings = get_settings()
-
-_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-
-
-def _date_from_timestamp(timestamp: str) -> str:
-    ts = (timestamp or "").strip()
-    if not ts:
-        return "unknown-date"
-
-    # Common case: ISO-8601-ish "YYYY-MM-DD..." -> take first 10 chars
-    if len(ts) >= 10 and _DATE_RE.match(ts[:10]):
-        return ts[:10]
-
-    # Sometimes passed as just "YYYY-MM-DD"
-    if _DATE_RE.match(ts):
-        return ts
-
-    return "unknown-date"
-
 
 app = FastAPI(
     title="Capture API",
@@ -65,7 +47,7 @@ async def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Ke
     return x_api_key
 
 
-async def append_to_github(category: str, timestamp: str, summary: str, processed_text: str) -> None:
+async def append_to_github(category: str, date_str: str, timestamp_display: str, processed_text: str) -> None:
     if not settings.GITHUB_TOKEN or not settings.GITHUB_REPO:
         raise HTTPException(status_code=500, detail="GITHUB_TOKEN or GITHUB_REPO not configured")
 
@@ -74,20 +56,19 @@ async def append_to_github(category: str, timestamp: str, summary: str, processe
     def _sync_append() -> None:
         g = Github(settings.GITHUB_TOKEN)
         repo = g.get_repo(settings.GITHUB_REPO)
-        date_str = _date_from_timestamp(timestamp)
         base = (settings.GITHUB_CAPTURE_BASE_PATH or "").strip().rstrip("/")
         path = f"{base}/闪念/{date_str}.md" if base else f"闪念/{date_str}.md"
         one_line = processed_text.replace("\n", " ")
         one_line = re.sub(r"\s+", " ", one_line).strip()
-        new_content = f"\n- [{timestamp}] {summary}\n  - {one_line}"
+        new_content = f"\n- [{timestamp_display}] {one_line}"
         try:
             file = repo.get_contents(path)
             current = file.decoded_content.decode("utf-8")
             updated = (current.rstrip() + new_content + "\n").encode("utf-8")
-            repo.update_file(path, f"Capture: {timestamp}", updated, file.sha)
+            repo.update_file(path, f"Capture: {timestamp_display}", updated, file.sha)
         except Exception:
             body = new_content.strip() + "\n"
-            repo.create_file(path, f"Capture: {timestamp}", body.encode("utf-8"))
+            repo.create_file(path, f"Capture: {timestamp_display}", body.encode("utf-8"))
 
     await asyncio.to_thread(_sync_append)
 
@@ -103,11 +84,13 @@ async def capture(
     _: str = Depends(verify_api_key),
 ):
     try:
-        # 暂时不做 AI 分析，统一按 Unsorted 分类，summary 为前 50 个字符
+        # 使用接口请求时间作为日期和显示时间，避免客户端格式解析失败
+        request_time = datetime.now(timezone.utc)
+        date_str = request_time.strftime("%Y-%m-%d")
+        timestamp_display = f"{request_time.year}年{request_time.month}月{request_time.day}日 {request_time.hour:02d}:{request_time.minute:02d}"
         category = "Unsorted"
         summary = body.text[:50] + ("..." if len(body.text) > 50 else "")
-        processed_text = body.text
-        await append_to_github(category, body.timestamp, summary, processed_text)
+        await append_to_github(category, date_str, timestamp_display, body.text)
         return CaptureResponse(
             status="success",
             category=category,
