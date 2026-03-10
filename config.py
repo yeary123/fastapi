@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     # GitHub
     GITHUB_TOKEN: str
     GITHUB_REPO: str  # e.g. "username/repo-name"
+    # 闪念文件所在目录的前缀，例如 obsidian/obsidian 表示写入 仓库/obsidian/obsidian/闪念/日期.md
+    GITHUB_CAPTURE_BASE_PATH: str = "obsidian/obsidian"
 
     # 分类列表，可以按需在环境变量里覆盖（逗号分隔）
     CATEGORIES: List[str] = [

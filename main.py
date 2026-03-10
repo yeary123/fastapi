@@ -75,7 +75,8 @@ async def append_to_github(category: str, timestamp: str, summary: str, processe
         g = Github(settings.GITHUB_TOKEN)
         repo = g.get_repo(settings.GITHUB_REPO)
         date_str = _date_from_timestamp(timestamp)
-        path = f"闪念/{date_str}.md"
+        base = (settings.GITHUB_CAPTURE_BASE_PATH or "").strip().rstrip("/")
+        path = f"{base}/闪念/{date_str}.md" if base else f"闪念/{date_str}.md"
         one_line = processed_text.replace("\n", " ")
         one_line = re.sub(r"\s+", " ", one_line).strip()
         new_content = f"\n- [{timestamp}] {summary}\n  - {one_line}"
