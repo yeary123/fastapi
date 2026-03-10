@@ -1,19 +1,17 @@
-"""
-FastAPI capture service: analyze text with LLM and append to GitHub repo.
-"""
+"""FastAPI capture service: analyze text with LLM and append to GitHub repo."""
 
-import os
 import re
-from typing import Optional
+from typing import Optional, Tuple
 
-from dotenv import load_dotenv
-from fastapi import FastAPI, Header, HTTPException, Depends
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from openai import AsyncOpenAI
 from github import Github
+from openai import AsyncOpenAI
 
-load_dotenv()
+from config import get_settings
+
+settings = get_settings()
 
 app = FastAPI(
     title="Capture API",
@@ -29,15 +27,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Config ---
-API_KEY = os.getenv("API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL")  # e.g. https://openrouter.ai/api/v1
-GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
-GITHUB_REPO = os.getenv("GITHUB_REPO")  # e.g. "username/repo-name"
-CATEGORIES = ["SEO_Work", "Tetris_Dev", "Bookkeeping_App", "Personal_Life", "Unsorted"]
-
-
 # --- Models ---
 class CaptureRequest(BaseModel):
     text: str = Field(..., min_length=1)
@@ -51,34 +40,34 @@ class CaptureResponse(BaseModel):
 
 
 async def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")):
-    if not API_KEY:
+    if not settings.API_KEY:
         raise HTTPException(status_code=500, detail="API_KEY not configured")
-    if not x_api_key or x_api_key != API_KEY:
+    if not x_api_key or x_api_key != settings.API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
     return x_api_key
 
 
 def get_openai_client() -> AsyncOpenAI:
-    if not OPENAI_API_KEY:
+    if not settings.OPENAI_API_KEY:
         raise HTTPException(status_code=500, detail="OPENAI_API_KEY not configured")
     return AsyncOpenAI(
-        api_key=OPENAI_API_KEY,
-        base_url=OPENAI_BASE_URL or None,
+        api_key=settings.OPENAI_API_KEY,
+        base_url=settings.OPENAI_BASE_URL or None,
     )
 
 
 def _normalize_category(raw: str) -> str:
     raw_upper = raw.strip().upper().replace(" ", "_")
-    for c in CATEGORIES:
+    for c in settings.CATEGORIES:
         if c.upper() == raw_upper:
             return c
     return "Unsorted"
 
 
-async def analyze_with_llm(text: str) -> tuple[str, str, str]:
+async def analyze_with_llm(text: str) -> Tuple[str, str, str]:
     """Returns (category, summary, processed_text)."""
     client = get_openai_client()
-    categories_str = ", ".join(CATEGORIES)
+    categories_str = ", ".join(settings.CATEGORIES)
     prompt = f"""Analyze this note and respond in exactly this format (no extra text):
 CATEGORY: one of [{categories_str}]
 SUMMARY: exactly 10 words, no more no less
@@ -90,7 +79,7 @@ Note:
 ---"""
     try:
         response = await client.chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+            model=settings.OPENAI_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.2,
         )
@@ -119,14 +108,14 @@ Note:
 
 
 async def append_to_github(category: str, timestamp: str, summary: str, processed_text: str) -> None:
-    if not GITHUB_TOKEN or not GITHUB_REPO:
+    if not settings.GITHUB_TOKEN or not settings.GITHUB_REPO:
         raise HTTPException(status_code=500, detail="GITHUB_TOKEN or GITHUB_REPO not configured")
 
     import asyncio
 
     def _sync_append() -> None:
-        g = Github(GITHUB_TOKEN)
-        repo = g.get_repo(GITHUB_REPO)
+        g = Github(settings.GITHUB_TOKEN)
+        repo = g.get_repo(settings.GITHUB_REPO)
         path = f"Projects/{category}.md"
         one_line = processed_text.replace("\n", " ")
         one_line = re.sub(r"\s+", " ", one_line).strip()
