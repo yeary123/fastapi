@@ -12,6 +12,25 @@ from config import get_settings
 
 settings = get_settings()
 
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _date_from_timestamp(timestamp: str) -> str:
+    ts = (timestamp or "").strip()
+    if not ts:
+        return "unknown-date"
+
+    # Common case: ISO-8601-ish "YYYY-MM-DD..." -> take first 10 chars
+    if len(ts) >= 10 and _DATE_RE.match(ts[:10]):
+        return ts[:10]
+
+    # Sometimes passed as just "YYYY-MM-DD"
+    if _DATE_RE.match(ts):
+        return ts
+
+    return "unknown-date"
+
+
 app = FastAPI(
     title="Capture API",
     description="Capture notes and append directly to GitHub",
@@ -55,7 +74,8 @@ async def append_to_github(category: str, timestamp: str, summary: str, processe
     def _sync_append() -> None:
         g = Github(settings.GITHUB_TOKEN)
         repo = g.get_repo(settings.GITHUB_REPO)
-        path = f"Projects/{category}.md"
+        date_str = _date_from_timestamp(timestamp)
+        path = f"闪念/{date_str}.md"
         one_line = processed_text.replace("\n", " ")
         one_line = re.sub(r"\s+", " ", one_line).strip()
         new_content = f"\n- [{timestamp}] {summary}\n  - {one_line}"
