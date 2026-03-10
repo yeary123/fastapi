@@ -7,10 +7,11 @@ All values ultimately来自环境变量（本地通过 .env，线上通过 Verce
 from functools import lru_cache
 from typing import List, Optional
 
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
     # API key 用于校验请求 Header: X-API-Key
     API_KEY: str
 
@@ -35,10 +36,6 @@ class Settings(BaseSettings):
         "Personal_Life",
         "Unsorted",
     ]
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
 
 
 @lru_cache()
