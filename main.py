@@ -1,8 +1,9 @@
 """FastAPI capture service: accept notes and append directly to GitHub."""
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -84,8 +85,8 @@ async def capture(
     _: str = Depends(verify_api_key),
 ):
     try:
-        # 使用接口请求时间作为日期和显示时间，避免客户端格式解析失败
-        request_time = datetime.now(timezone.utc)
+        # 使用接口请求时间（北京时间）作为日期和显示时间
+        request_time = datetime.now(ZoneInfo("Asia/Shanghai"))
         date_str = request_time.strftime("%Y-%m-%d")
         timestamp_display = f"{request_time.year}年{request_time.month}月{request_time.day}日 {request_time.hour:02d}:{request_time.minute:02d}"
         category = "Unsorted"
